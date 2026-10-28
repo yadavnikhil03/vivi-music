@@ -1,3 +1,7 @@
+/**
+ * vivimusic Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ */
 package com.music.vivi.ui.player
 
 import android.content.res.Configuration
@@ -43,6 +47,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
+import androidx.compose.ui.graphics.graphicsLayer
 import coil3.compose.AsyncImage
 import com.music.vivi.LocalListenTogetherManager
 import com.music.vivi.LocalPlayerConnection
@@ -70,6 +75,7 @@ fun AppleMiniPlayer(
     
     // Theme settings
     val pureBlack by rememberPreference(PureBlackMiniPlayerKey, defaultValue = false)
+    val cropAlbumArt by rememberPreference(CropAlbumArtKey, defaultValue = false)
     val isSystemInDarkTheme = isSystemInDarkTheme()
     val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.AUTO)
     val useDarkTheme = remember(darkTheme, isSystemInDarkTheme) {
@@ -195,10 +201,16 @@ fun AppleMiniPlayer(
                                     (kotlin.math.abs(currentOffset) > autoSwipeThreshold)
 
                                 if (shouldChangeSong) {
+                                    // Same crossfade-aware path as Thumbnail/MiniPlayer; falls back to an
+                                    // instant skip when crossfade-on-manual-skip is off or can't start.
                                     if (currentOffset > 0 && canSkipPreviousLocal) {
-                                        playerConnection.player.seekToPreviousMediaItem()
+                                        if (!playerConnection.service.manualSkipToPreviousWithCrossfade()) {
+                                            playerConnection.player.seekToPreviousMediaItem()
+                                        }
                                     } else if (currentOffset <= 0 && canSkipNextLocal) {
-                                        playerConnection.player.seekToNext()
+                                        if (!playerConnection.service.manualSkipToNextWithCrossfade()) {
+                                            playerConnection.player.seekToNext()
+                                        }
                                     }
                                 }
                                 coroutineScope.launch {
@@ -252,11 +264,21 @@ fun AppleMiniPlayer(
                         .background(color = outlineColor.copy(alpha = 0.2f))
                 ) {
                     mediaMetadata?.let { metadata ->
+                        val isYtThumbnail = remember(metadata.thumbnailUrl) {
+                            metadata.thumbnailUrl?.let { it.contains("ytimg") || it.contains("/vi/") || it.contains("youtube.com") } == true
+                        }
                         AsyncImage(
                             model = metadata.thumbnailUrl,
                             contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
+                            contentScale = if (cropAlbumArt) ContentScale.Crop else ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    if (cropAlbumArt && isYtThumbnail) {
+                                        scaleX = 4f / 3f
+                                        scaleY = 4f / 3f
+                                    }
+                                }
                         )
                     }
                 }

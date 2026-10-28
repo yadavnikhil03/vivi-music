@@ -91,6 +91,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEachIndexed
 import androidx.compose.ui.zIndex
 import androidx.media3.common.MediaItem
@@ -1308,14 +1309,35 @@ fun YouTubeGridItem(
             is ArtistItem -> item.subtext
             is PlaylistItem -> joinByBullet(item.author?.name, item.songCountText)
         }
+        
+        val isLiveOrStation = (item is SongItem && item.duration == null) || item.title.contains("Station", ignoreCase = true)
+
         if (subtitle != null) {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isLiveOrStation) {
+                    androidx.compose.material3.Surface(
+                        color = MaterialTheme.colorScheme.error,
+                        shape = RoundedCornerShape(1.dp),
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        Text(
+                            text = "LIVE",
+                            color = MaterialTheme.colorScheme.onError,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     },
     badges = badges,
@@ -1513,6 +1535,9 @@ fun ItemThumbnail(
             .clip(shape)
     ) {
         if (albumIndex == null) {
+            val isYtThumbnail = remember(thumbnailUrl) {
+                thumbnailUrl?.let { it.contains("ytimg") || it.contains("/vi/") || it.contains("youtube.com") } == true
+            }
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(thumbnailUrl?.resize(544, 544))
@@ -1523,7 +1548,13 @@ fun ItemThumbnail(
                 contentDescription = null,
                 contentScale = if (cropAlbumArt) ContentScale.Crop else ContentScale.Fit,
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        if (cropAlbumArt && isYtThumbnail) {
+                            scaleX = 4f / 3f
+                            scaleY = 4f / 3f
+                        }
+                    }
                     .clip(shape)
             )
         }
@@ -1593,6 +1624,9 @@ fun LocalThumbnail(
             .aspectRatio(thumbnailRatio)
             .clip(shape)
     ) {
+        val isYtThumbnail = remember(thumbnailUrl) {
+            thumbnailUrl?.let { it.contains("ytimg") || it.contains("/vi/") || it.contains("youtube.com") } == true
+        }
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(thumbnailUrl)
@@ -1602,7 +1636,14 @@ fun LocalThumbnail(
                 .build(),
             contentDescription = null,
             contentScale = if (cropAlbumArt) ContentScale.Crop else ContentScale.Fit,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    if (cropAlbumArt && isYtThumbnail) {
+                        scaleX = 4f / 3f
+                        scaleY = 4f / 3f
+                    }
+                }
         )
 
         AnimatedVisibility(
@@ -1703,22 +1744,33 @@ fun PlaylistThumbnail(
         ) {
             placeHolder()
         }
-        1 -> AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(thumbnails[0].resize(544, 544))
-                .apply { /* Removed cache key extensions due to unresolved in env */ }
-                .memoryCachePolicy(coil3.request.CachePolicy.ENABLED)
-                .diskCachePolicy(coil3.request.CachePolicy.ENABLED)
-                .networkCachePolicy(coil3.request.CachePolicy.ENABLED)
-                .build(),
-            contentDescription = null,
-            contentScale = if (cropAlbumArt) ContentScale.Crop else ContentScale.Fit,
-            placeholder = painterResource(R.drawable.queue_music),
-            error = painterResource(R.drawable.queue_music),
-            modifier = Modifier
-                .size(size)
-                .clip(shape)
-        )
+        1 -> {
+            val isYtThumbnail = remember(thumbnails) {
+                thumbnails.firstOrNull()?.let { it.contains("ytimg") || it.contains("/vi/") || it.contains("youtube.com") } == true
+            }
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(thumbnails[0].resize(544, 544))
+                    .apply { /* Removed cache key extensions due to unresolved in env */ }
+                    .memoryCachePolicy(coil3.request.CachePolicy.ENABLED)
+                    .diskCachePolicy(coil3.request.CachePolicy.ENABLED)
+                    .networkCachePolicy(coil3.request.CachePolicy.ENABLED)
+                    .build(),
+                contentDescription = null,
+                contentScale = if (cropAlbumArt) ContentScale.Crop else ContentScale.Fit,
+                placeholder = painterResource(R.drawable.queue_music),
+                error = painterResource(R.drawable.queue_music),
+                modifier = Modifier
+                    .size(size)
+                    .clip(shape)
+                    .graphicsLayer {
+                        if (cropAlbumArt && isYtThumbnail) {
+                            scaleX = 4f / 3f
+                            scaleY = 4f / 3f
+                        }
+                    }
+            )
+        }
         else -> Box(
             modifier = Modifier
                 .size(size)

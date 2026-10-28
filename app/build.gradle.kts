@@ -25,9 +25,9 @@ android {
         applicationId = "com.vivi.vivimusic"
         minSdk = 26
         targetSdk = 37
-        versionCode = 77
+        versionCode = 78
         val betaVersionName = project.findProperty("betaVersionName") as String?
-        versionName = betaVersionName ?: "6.0.8"
+        versionName = betaVersionName ?: "6.0.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -61,6 +61,7 @@ android {
         // GMS variant - with Google Cast support (requires Google Play Services)
         create("gms") {
             dimension = "variant"
+//            isDefault = true
             buildConfigField("Boolean", "CAST_AVAILABLE", "true")
         }
         
@@ -284,11 +285,9 @@ dependencies {
     implementation(project(":innertube"))
     implementation(project(":kizzy"))
     implementation(project(":lastfm"))
-    implementation(project(":canvas"))
+    implementation(project(":Motionartwork"))
     implementation(project(":shazamkit"))
     implementation(project(":artistvideo"))
-    implementation(project(":applecanvas"))
-    implementation(project(":vivimusiccanvas"))
     implementation(project(":jiosaavn"))
     implementation(project(":spotify"))
     implementation(project(":lyricsProvider"))
@@ -315,5 +314,7 @@ dependencies {
     implementation(libs.haze)
     implementation(libs.work.runtime.ktx)
     implementation(libs.androidx.core.splashscreen)
+
+    testImplementation(libs.junit)
 }
 
