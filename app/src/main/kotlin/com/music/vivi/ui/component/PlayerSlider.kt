@@ -14,11 +14,15 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -29,7 +33,7 @@ fun PlayerSliderTrack(
     sliderState: SliderState,
     modifier: Modifier = Modifier,
     colors: SliderColors = SliderDefaults.colors(),
-    trackHeight: Dp = 10.dp
+    trackHeight: Dp = 7.25.dp
 ) {
     val inactiveTrackColor = colors.inactiveTrackColor
     val activeTrackColor = colors.activeTrackColor
@@ -66,7 +70,7 @@ private fun DrawScope.drawTrack(
     activeTrackColor: Color,
     inactiveTickColor: Color,
     activeTickColor: Color,
-    trackHeight: Dp = 2.dp
+    trackHeight: Dp = 7.25.dp
 ) {
     val isRtl = layoutDirection == LayoutDirection.Rtl
     val sliderLeft = Offset(0f, center.y)
@@ -75,30 +79,48 @@ private fun DrawScope.drawTrack(
     val sliderEnd = if (isRtl) sliderLeft else sliderRight
     val tickSize = 2.0.dp.toPx()
     val trackStrokeWidth = trackHeight.toPx()
-    drawLine(
-        inactiveTrackColor,
-        sliderStart,
-        sliderEnd,
-        trackStrokeWidth,
-        StrokeCap.Round
-    )
-    val sliderValueEnd = Offset(
-        sliderStart.x +
-                (sliderEnd.x - sliderStart.x) * activeRangeEnd,
-        center.y
-    )
-    val sliderValueStart = Offset(
-        sliderStart.x +
-                (sliderEnd.x - sliderStart.x) * activeRangeStart,
-        center.y
-    )
-    drawLine(
-        activeTrackColor,
-        sliderValueStart,
-        sliderValueEnd,
-        trackStrokeWidth,
-        StrokeCap.Round
-    )
+
+    val cornerRadius = CornerRadius(trackStrokeWidth / 2f, trackStrokeWidth / 2f)
+    val trackPath = Path().apply {
+        addRoundRect(
+            RoundRect(
+                left = 0f,
+                top = center.y - trackStrokeWidth / 2f,
+                right = size.width,
+                bottom = center.y + trackStrokeWidth / 2f,
+                cornerRadius = cornerRadius
+            )
+        )
+    }
+    clipPath(trackPath) {
+        // 1. Inactive track
+        drawLine(
+            color = inactiveTrackColor,
+            start = sliderStart,
+            end = sliderEnd,
+            strokeWidth = trackStrokeWidth,
+            cap = StrokeCap.Butt
+        )
+        // 2. Active track
+        if (activeRangeEnd > activeRangeStart) {
+            val sliderValueEnd = Offset(
+                sliderStart.x + (sliderEnd.x - sliderStart.x) * activeRangeEnd,
+                center.y
+            )
+            val sliderValueStart = Offset(
+                sliderStart.x + (sliderEnd.x - sliderStart.x) * activeRangeStart,
+                center.y
+            )
+            drawLine(
+                color = activeTrackColor,
+                start = sliderValueStart,
+                end = sliderValueEnd,
+                strokeWidth = trackStrokeWidth,
+                cap = StrokeCap.Butt
+            )
+        }
+    }
+
     for (tick in tickFractions) {
         val outsideFraction = tick > activeRangeEnd || tick < activeRangeStart
         drawCircle(

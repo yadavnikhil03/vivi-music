@@ -282,7 +282,13 @@ interface DatabaseDao {
                          FROM (SELECT id
                                FROM song
                                ORDER BY totalPlayTime DESC
-                               LIMIT 10))
+                               LIMIT 10)
+                         UNION
+                         SELECT songId
+                         FROM (SELECT songId
+                               FROM related_song_map
+                               ORDER BY ROWID DESC
+                               LIMIT 5))
         ORDER BY referredCount DESC
         LIMIT 100
     """,
@@ -1207,6 +1213,14 @@ interface DatabaseDao {
     @Transaction
     @Query("DELETE FROM search_history")
     fun clearSearchHistory()
+
+    @Transaction
+    @Query("DELETE FROM lyrics")
+    fun clearLyricsCache()
+
+    @Transaction
+    @Query("DELETE FROM format")
+    fun clearFormatCache()
 
     // Recognition History
     @Transaction

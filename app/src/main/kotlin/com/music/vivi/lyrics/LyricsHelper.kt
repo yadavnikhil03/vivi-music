@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -55,7 +56,7 @@ constructor(
 
         // Migration path: place the old preferred provider first in the default order
         val preferredEnum = preferences[PreferredLyricsProviderKey]
-            .toEnum(PreferredLyricsProvider.MUSIXMATCH)
+            .toEnum(PreferredLyricsProvider.YOULYPLUS)
         val preferredName = LyricsProviderRegistry.getProviderNameForEnum(preferredEnum)
         val defaultOrder = LyricsProviderRegistry.getDefaultProviderOrder()
         val migratedOrder = listOf(preferredName) + defaultOrder.filter { it != preferredName }
@@ -65,11 +66,26 @@ constructor(
 
 
     private val cache = LruCache<String, List<LyricsResult>>(MAX_CACHE_SIZE)
+    private val isrcs: MutableMap<String, String> = java.util.Collections.synchronizedMap(
+        object : LinkedHashMap<String, String>(100, 0.75f, true) {
+            override fun removeEldestEntry(eldest: Map.Entry<String, String>) = size > 100
+        }
+    )
     private var currentLyricsJob: Job? = null
 
     private val helperScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeFetches = mutableMapOf<String, Deferred<LyricsWithProvider>>()
     private val fetchesMutex = Mutex()
+
+    fun clearCache(mediaId: String) {
+        cache.remove(mediaId)
+        isrcs.remove(mediaId)
+        helperScope.launch {
+            fetchesMutex.withLock {
+                activeFetches.remove(mediaId)?.cancel()
+            }
+        }
+    }
 
     suspend fun getLyrics(mediaMetadata: MediaMetadata): LyricsWithProvider {
         currentLyricsJob?.cancel()
@@ -101,26 +117,47 @@ constructor(
                     val prioritizeSync = preferences[LyricsPrioritizeSyncAccuracyKey] ?: true
                     
                     val providers = resolveLyricsProviders()
-                    
+                    val artistsStr = mediaMetadata.artists.joinToString { it.name }
+
+                    // Resolve ISRC for exact recording match if BiniLyrics is enabled
+                    val resolvedIsrc = isrcs[mediaMetadata.id] ?: withTimeoutOrNull(2500L) {
+                        if (providers.any { it.name == "BiniLyrics" || it.name == "Bini Lyrics" }) {
+                            BiniLyricsProvider.identify(
+                                mediaMetadata.title,
+                                artistsStr,
+                                mediaMetadata.duration,
+                                mediaMetadata.album?.title,
+                            )
+                        } else null
+                    }?.also { if (it.isNotBlank()) isrcs[mediaMetadata.id] = it }
+
                     val channel = kotlinx.coroutines.channels.Channel<Triple<Int, String, String>>(kotlinx.coroutines.channels.Channel.UNLIMITED)
                     
-                    val jobs = providers.mapIndexedNotNull { index, provider ->
+                    // Genius is kept lazy and executed only as a fallback if all synced providers miss
+                    val syncedProviders = providers.filter { it.name != "Genius" }
+                    val jobs = syncedProviders.mapIndexedNotNull { index, provider ->
                         if (provider.isEnabled(context)) {
                             launch {
                                 try {
-                                    val result = provider.getLyrics(
-                                        mediaMetadata.id,
-                                        mediaMetadata.title,
-                                        mediaMetadata.artists.joinToString { it.name },
-                                        mediaMetadata.duration,
-                                        mediaMetadata.album?.title,
-                                    )
-                                    result.onSuccess { lyrics ->
-                                        if (lyrics.isNotBlank() && lyrics != LYRICS_NOT_FOUND) {
-                                            channel.send(Triple(index, provider.name, lyrics))
+                                    withTimeoutOrNull(3500L) {
+                                        val result = if (provider.name == "LrcRed" && !resolvedIsrc.isNullOrBlank()) {
+                                            LrcRedLyricsProvider.getLyricsByIsrc(resolvedIsrc)
+                                        } else {
+                                            provider.getLyrics(
+                                                mediaMetadata.id,
+                                                mediaMetadata.title,
+                                                artistsStr,
+                                                mediaMetadata.duration,
+                                                mediaMetadata.album?.title,
+                                            )
                                         }
-                                    }.onFailure {
-                                        reportException(it)
+                                        result.onSuccess { lyrics ->
+                                            if (lyrics.isNotBlank() && lyrics != LYRICS_NOT_FOUND) {
+                                                channel.send(Triple(index, provider.name, lyrics))
+                                            }
+                                        }.onFailure {
+                                            reportException(it)
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     reportException(e)
@@ -140,59 +177,120 @@ constructor(
                     var bestIndex = Int.MAX_VALUE
 
                     try {
-                        kotlinx.coroutines.withTimeout(15000) {
-                            for ((index, providerName, lyrics) in channel) {
-                                if (!prioritizeSync) {
-                                    if (index < bestIndex) {
+                        var deadline = System.currentTimeMillis() + 5000L
+
+                        while (System.currentTimeMillis() < deadline) {
+                            val remainingTime = (deadline - System.currentTimeMillis()).coerceAtLeast(1L)
+                            val item = withTimeoutOrNull(remainingTime) {
+                                channel.receiveCatching()
+                            } ?: break
+
+                            val triple = item.getOrNull() ?: break
+                            val (index, providerName, lyrics) = triple
+
+                            if (!prioritizeSync) {
+                                if (index < bestIndex) {
+                                    bestLyrics = lyrics
+                                    bestProvider = providerName
+                                    bestIndex = index
+                                    if (index == 0) break
+                                    deadline = minOf(deadline, System.currentTimeMillis() + 500L)
+                                }
+                            } else {
+                                val syncType = try {
+                                    LyricsUtils.getSyncType(lyrics)
+                                } catch (e: Exception) {
+                                    reportException(e)
+                                    LyricsUtils.SyncType.NONE
+                                }
+
+                                if (syncType == LyricsUtils.SyncType.WORD) {
+                                    if (bestSyncType != LyricsUtils.SyncType.WORD || index < bestIndex) {
                                         bestLyrics = lyrics
                                         bestProvider = providerName
+                                        bestSyncType = syncType
                                         bestIndex = index
-                                        if (index == 0) break
+                                    }
+                                    if (index == 0) break
+                                    deadline = minOf(deadline, System.currentTimeMillis() + 400L)
+                                } else if (syncType == LyricsUtils.SyncType.LINE) {
+                                    val isBetter = bestSyncType == LyricsUtils.SyncType.NONE ||
+                                        (bestSyncType == LyricsUtils.SyncType.LINE && index < bestIndex)
+                                    if (isBetter) {
+                                        bestLyrics = lyrics
+                                        bestProvider = providerName
+                                        bestSyncType = syncType
+                                        bestIndex = index
+                                    }
+                                    if (bestSyncType == LyricsUtils.SyncType.LINE) {
+                                        if (index == 0) {
+                                            deadline = minOf(deadline, System.currentTimeMillis() + 500L)
+                                        } else {
+                                            deadline = minOf(deadline, System.currentTimeMillis() + 800L)
+                                        }
                                     }
                                 } else {
-                                    val syncType = try {
-                                        LyricsUtils.getSyncType(lyrics)
-                                    } catch (e: Exception) {
-                                        reportException(e)
-                                        LyricsUtils.SyncType.NONE
-                                    }
-                                    
-                                    if (syncType == LyricsUtils.SyncType.WORD) {
-                                        if (bestSyncType != LyricsUtils.SyncType.WORD || index < bestIndex) {
-                                            bestLyrics = lyrics
-                                            bestProvider = providerName
-                                            bestSyncType = syncType
-                                            bestIndex = index
-                                        }
-                                        if (index == 0) break
-                                    } else if (syncType == LyricsUtils.SyncType.LINE && (bestSyncType == LyricsUtils.SyncType.NONE || (bestSyncType == LyricsUtils.SyncType.LINE && index < bestIndex))) {
+                                    if (bestLyrics == LYRICS_NOT_FOUND) {
                                         bestLyrics = lyrics
                                         bestProvider = providerName
                                         bestSyncType = syncType
                                         bestIndex = index
-                                    } else if (bestLyrics == LYRICS_NOT_FOUND || (syncType == bestSyncType && index < bestIndex)) {
+                                        deadline = minOf(deadline, System.currentTimeMillis() + 1200L)
+                                    } else if (bestSyncType == LyricsUtils.SyncType.NONE && index < bestIndex) {
                                         bestLyrics = lyrics
                                         bestProvider = providerName
-                                        bestSyncType = syncType
                                         bestIndex = index
                                     }
                                 }
                             }
                         }
-                    } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-                        // Use whatever we found
+                    } catch (e: Exception) {
+                        reportException(e)
                     } finally {
                         jobs.forEach { it.cancel() }
                         channel.close()
                     }
-                    
+
+                    // Lazy fallback: Genius plain text scraper only if all synced providers missed
+                    if (bestLyrics == LYRICS_NOT_FOUND) {
+                        val genius = providers.firstOrNull { it.name == "Genius" }
+                        if (genius != null && genius.isEnabled(context)) {
+                            try {
+                                withTimeoutOrNull(4000L) {
+                                    val result = genius.getLyrics(
+                                        mediaMetadata.id,
+                                        mediaMetadata.title,
+                                        artistsStr,
+                                        mediaMetadata.duration,
+                                        mediaMetadata.album?.title,
+                                    )
+                                    result.onSuccess { lyrics ->
+                                        if (lyrics.isNotBlank() && lyrics != LYRICS_NOT_FOUND) {
+                                            bestLyrics = lyrics
+                                            bestProvider = "Genius"
+                                        }
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                reportException(e)
+                            }
+                        }
+                    }
+
+                    if (bestLyrics != LYRICS_NOT_FOUND) {
+                        cache.put(cacheKey, listOf(LyricsResult(bestProvider, bestLyrics)))
+                    }
                     LyricsWithProvider(bestLyrics, bestProvider)
                 }
             }
         }
 
         return try {
-            deferred.await()
+            val result = deferred.await()
+            if (result.lyrics != LYRICS_NOT_FOUND) {
+                cache.put(cacheKey, listOf(LyricsResult(result.provider, result.lyrics)))
+            }
+            result
         } finally {
             fetchesMutex.withLock {
                 activeFetches.remove(cacheKey)
@@ -261,7 +359,7 @@ constructor(
     }
 
     companion object {
-        private const val MAX_CACHE_SIZE = 3
+        private const val MAX_CACHE_SIZE = 50
     }
 }
 

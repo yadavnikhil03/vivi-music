@@ -18,7 +18,7 @@ import kotlin.math.sin
 
 import com.music.innertube.models.IpVersion
 
-val IsFirstRunKey = booleanPreferencesKey("isFirstRun")
+val SetupWizardCompletedKey = booleanPreferencesKey("setup_wizard_completed")
 val EnableDynamicIconKey = booleanPreferencesKey("enableDynamicIcon")
 val EnableHighRefreshRateKey = booleanPreferencesKey("enableHighRefreshRate")
 val GitHubAccessTokenKey = stringPreferencesKey("gitHubAccessToken")
@@ -32,13 +32,14 @@ val SelectedFontKey = stringPreferencesKey("selected_font")
 val CustomFontPathKey = stringPreferencesKey("custom_font_path")
 
 enum class AppFont(val value: String) {
+    POPPINS("poppins"),
     SYSTEM("system"),
     OUTFIT("outfit"),
     PLUS_JAKARTA_SANS("plus_jakarta_sans"),
     CUSTOM("custom");
 
     companion object {
-        fun fromValue(value: String): AppFont = entries.find { it.value == value } ?: SYSTEM
+        fun fromValue(value: String): AppFont = entries.find { it.value == value } ?: POPPINS
     }
 }
 
@@ -66,7 +67,6 @@ val SquigglySliderKey = booleanPreferencesKey("squigglySlider")
 val SwipeToSongKey = booleanPreferencesKey("SwipeToSong")
 val SwipeToRemoveSongKey = booleanPreferencesKey("SwipeToRemoveSong")
 val UseNewPlayerDesignKey= booleanPreferencesKey("useNewPlayerDesign")
-val UsePlayerV2Key = booleanPreferencesKey("usePlayerV2")
 val UseExpressiveAlbumDesignKey = booleanPreferencesKey("useExpressiveAlbumDesign")
 val ExpressiveSongAlbumImageKey = booleanPreferencesKey("expressiveSongAlbumImage")
 val UseNewMiniPlayerDesignKey = booleanPreferencesKey("useNewMiniPlayerDesign")
@@ -89,19 +89,21 @@ enum class SliderStyle {
     DEFAULT,
     WAVY,
     SLIM,
-    EXPRESSIVE
+    EXPRESSIVE,
+    THIN
 }
 
 const val SYSTEM_DEFAULT = "SYSTEM_DEFAULT"
 val AppLanguageKey = stringPreferencesKey("appLanguage")
 val ContentLanguageKey = stringPreferencesKey("contentLanguage")
 val ContentCountryKey = stringPreferencesKey("contentCountry")
-val SuggestionRegionKey = stringPreferencesKey("suggestionRegion")
 val EnableKugouKey = booleanPreferencesKey("enableKugou")
+val EnableYouTubeLyricsKey = booleanPreferencesKey("enableYouTubeLyrics")
 val EnableLrcLibKey = booleanPreferencesKey("enableLrclib")
 val EnableLrcRedKey = booleanPreferencesKey("enableLrcRed")
 val EnableBetterLyricsKey = booleanPreferencesKey("enableBetterLyrics")
-val EnableMusixmatchKey = booleanPreferencesKey("enableMusixmatch")
+val EnableBetterLyricsPortatoKey = booleanPreferencesKey("enableBetterLyricsPortato")
+val EnableGeniusLyricsKey = booleanPreferencesKey("enableGeniusLyrics")
 val EnableSpotifyLyricsKey = booleanPreferencesKey("enableSpotifyLyrics")
 
 val EnableYouLyPlusKey = booleanPreferencesKey("enableYouLyPlus")
@@ -135,6 +137,8 @@ enum class AudioQuality {
 
 val AudioOffload = booleanPreferencesKey("enableOffload")
 val AudioTrackPlaybackParamsKey = booleanPreferencesKey("audioTrackPlaybackParams")
+val PlaybackTempoKey = floatPreferencesKey("playback_tempo")
+val PlaybackPitchKey = intPreferencesKey("playback_pitch")
 
 // JioSaavn streaming
 val EnableSaavnStreamingKey = booleanPreferencesKey("enableSaavnStreaming")
@@ -159,8 +163,6 @@ val CipherManualUpdate2Key = longPreferencesKey("cipher_manual_update_2")
 val CipherManualUpdate3Key = longPreferencesKey("cipher_manual_update_3")
 
 val EnableNotificationsKey = booleanPreferencesKey("enableNotifications")
-val NewReleaseNotificationsKey = booleanPreferencesKey("newReleaseNotifications")
-val TasteBasedReleaseNotificationsKey = booleanPreferencesKey("tasteBasedReleaseNotifications")
 
 
 val AutoBackupEnabledKey = booleanPreferencesKey("autoBackupEnabled")
@@ -489,7 +491,6 @@ enum class PreferredLyricsProvider {
     LRCLIB,
     KUGOU,
     BETTER_LYRICS,
-    MUSIXMATCH,
     YOULYPLUS,
     PAXSENIX,
     UNISON,
@@ -539,6 +540,8 @@ val LyricsRomanizeKyrgyzKey = booleanPreferencesKey("lyricsRomanizeKyrgyz")
 val LyricsRomanizeMacedonianKey = booleanPreferencesKey("lyricsRomanizeMacedonian")
 val LyricsRomanizeHindiKey = booleanPreferencesKey("lyricsRomanizeHindi")
 val LyricsRomanizePunjabiKey = booleanPreferencesKey("lyricsRomanizePunjabi")
+val LyricsRomanizeMalayalamKey = booleanPreferencesKey("lyricsRomanizeMalayalam")
+val LyricsRomanizeAllKey = booleanPreferencesKey("lyricsRomanizeAll")
 val LyricsRomanizeAsMainKey = booleanPreferencesKey("lyricsRomanizeAsMain")
 val LyricsRomanizeCyrillicByLineKey = booleanPreferencesKey("lyricsRomanizeCyrillicByLine")
 val TranslateLyricsKey = booleanPreferencesKey("translateLyrics")
@@ -551,26 +554,13 @@ val TranslateModeKey = stringPreferencesKey("translateMode")
 val TranslateLanguageKey = stringPreferencesKey("translateLanguage")
 val DeeplApiKey = stringPreferencesKey("deeplApiKey")
 val DeeplFormalityKey = stringPreferencesKey("deeplFormality")
-val LyricsGlowEffectKey = booleanPreferencesKey("lyricsGlowEffect")
-val AppleMusicLyricsBlurKey = booleanPreferencesKey("appleMusicLyricsBlur")
-val LyricsStandardBlurKey = booleanPreferencesKey("lyricsStandardBlur")
 
 val LyricsAnimationStyleKey = stringPreferencesKey("lyricsAnimationStyle")
 enum class LyricsAnimationStyle {
     NONE,
-    FADE,
-    GLOW,
-    SLIDE,
-    KARAOKE,
-    APPLE,
-    APPLE_V2,
     VIVIMUSIC_1,
-    LYRICS_V2,
     METRO_LYRICS,
 }
-
-val LyricsTextSizeKey = floatPreferencesKey("lyricsTextSize")
-val LyricsLineSpacingKey = floatPreferencesKey("lyricsLineSpacing")
 
 val PlayerVolumeKey = floatPreferencesKey("playerVolume")
 val RepeatModeKey = intPreferencesKey("repeatMode")
@@ -613,6 +603,7 @@ enum class SearchSource {
 }
 
 val VisitorDataKey = stringPreferencesKey("visitorData")
+val VisitorCookieKey = stringPreferencesKey("visitorCookie")
 val DataSyncIdKey = stringPreferencesKey("dataSyncId")
 val InnerTubeCookieKey = stringPreferencesKey("innerTubeCookie")
 val AccountNameKey = stringPreferencesKey("accountName")
@@ -812,48 +803,4 @@ val CountryCodeToName =
         "VN" to "Vietnam",
         "YE" to "Yemen",
         "ZW" to "Zimbabwe",
-    )
-
-val SuggestionRegionSlugToName =
-    mapOf(
-        "system" to "System Default",
-        "us" to "Global (USA)",
-        "in" to "India",
-        "gb" to "United Kingdom",
-        "ca" to "Canada",
-        "au" to "Australia",
-        "jp" to "Japan",
-        "kr" to "South Korea",
-        "de" to "Germany",
-        "fr" to "France",
-        "br" to "Brazil",
-        "mx" to "Mexico",
-        "ru" to "Russia",
-        "it" to "Italy",
-        "es" to "Spain",
-        "nl" to "Netherlands",
-        "se" to "Sweden",
-        "no" to "Norway",
-        "dk" to "Denmark",
-        "fi" to "Finland",
-        "pl" to "Poland",
-        "tr" to "Turkey",
-        "za" to "South Africa",
-        "ng" to "Nigeria",
-        "id" to "Indonesia",
-        "my" to "Malaysia",
-        "ph" to "Philippines",
-        "th" to "Thailand",
-        "vn" to "Vietnam",
-        "tw" to "Taiwan",
-        "hk" to "Hong Kong",
-        "sg" to "Singapore",
-        "ar" to "Argentina",
-        "co" to "Colombia",
-        "cl" to "Chile",
-        "pe" to "Peru",
-        "eg" to "Egypt",
-        "sa" to "Saudi Arabia",
-        "ae" to "United Arab Emirates",
-        "il" to "Israel"
     )

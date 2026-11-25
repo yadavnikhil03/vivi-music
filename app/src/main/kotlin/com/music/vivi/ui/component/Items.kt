@@ -101,6 +101,7 @@ import androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING
 import androidx.media3.exoplayer.offline.Download.STATE_QUEUED
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.music.innertube.YouTube
 import com.music.innertube.models.AlbumItem
 import com.music.innertube.models.ArtistItem
@@ -1310,11 +1311,14 @@ fun YouTubeGridItem(
             is PlaylistItem -> joinByBullet(item.author?.name, item.songCountText)
         }
         
-        val isLiveOrStation = (item is SongItem && item.duration == null) || item.title.contains("Station", ignoreCase = true)
+        val isLive = item is SongItem && (
+            item.viewCountText?.contains("watching", ignoreCase = true) == true ||
+            item.title.contains(Regex("""\b(live\s*stream|livestream|24/7\s*live|live\s*24/7)\b""", RegexOption.IGNORE_CASE))
+        )
 
         if (subtitle != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (isLiveOrStation) {
+                if (isLive) {
                     androidx.compose.material3.Surface(
                         color = MaterialTheme.colorScheme.error,
                         shape = RoundedCornerShape(1.dp),
@@ -1351,6 +1355,7 @@ fun YouTubeGridItem(
             isActive = isActive,
             isPlaying = isPlaying,
             shape = if (item is ArtistItem) CircleShape else RoundedCornerShape(ThumbnailCornerRadius),
+            thumbnailRatio = thumbnailRatio,
         )
 
         if (item is SongItem && !isActive) {
@@ -1538,19 +1543,22 @@ fun ItemThumbnail(
             val isYtThumbnail = remember(thumbnailUrl) {
                 thumbnailUrl?.let { it.contains("ytimg") || it.contains("/vi/") || it.contains("youtube.com") } == true
             }
+            val targetWidth = remember(thumbnailRatio) {
+                if (thumbnailRatio > 1f) (544 * thumbnailRatio).toInt() else 544
+            }
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
-                    .data(thumbnailUrl?.resize(544, 544))
+                    .data(thumbnailUrl?.resize(targetWidth, 544))
                     .memoryCachePolicy(coil3.request.CachePolicy.ENABLED)
                     .diskCachePolicy(coil3.request.CachePolicy.ENABLED)
                     .networkCachePolicy(coil3.request.CachePolicy.ENABLED)
                     .build(),
                 contentDescription = null,
-                contentScale = if (cropAlbumArt) ContentScale.Crop else ContentScale.Fit,
+                contentScale = if (thumbnailRatio > 1f || cropAlbumArt) ContentScale.Crop else ContentScale.Fit,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        if (cropAlbumArt && isYtThumbnail) {
+                        if (cropAlbumArt && isYtThumbnail && thumbnailRatio == 1f) {
                             scaleX = 4f / 3f
                             scaleY = 4f / 3f
                         }
@@ -2044,13 +2052,76 @@ object Icon {
     }
 
     @Composable
-    fun Explicit() {
+    fun Explicit(tint: Color = LocalContentColor.current) {
         Icon(
             painter = painterResource(R.drawable.explicit),
             contentDescription = null,
+            tint = tint,
             modifier = Modifier
                 .size(18.dp)
                 .padding(end = 2.dp)
         )
     }
 }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun ExpressiveBox(
+    title: String,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    accentShapeColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    shape: Shape = MaterialShapes.Cookie9Sided.toShape(),
+    cornerRadius: Dp = 8.dp,
+    imageModel: Any? = null,
+) {
+    Box(
+        modifier = modifier
+            .height(80.dp)
+            .clip(RoundedCornerShape(cornerRadius))
+            .background(containerColor)
+            .clickable(onClick = onClick)
+    ) {
+        // Decorative expressive shape positioned at bottom-right
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = 12.dp, y = 12.dp)
+                .size(76.dp)
+                .clip(shape)
+                .background(accentShapeColor)
+        ) {
+            if (imageModel != null) {
+                val model = if (imageModel is String) imageModel.resize(160, 160) else imageModel
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(model)
+                        .crossfade(true)
+                        .memoryCachePolicy(coil3.request.CachePolicy.ENABLED)
+                        .diskCachePolicy(coil3.request.CachePolicy.ENABLED)
+                        .networkCachePolicy(coil3.request.CachePolicy.ENABLED)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        // Title text
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = contentColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 16.dp, end = 56.dp)
+        )
+    }
+}
+

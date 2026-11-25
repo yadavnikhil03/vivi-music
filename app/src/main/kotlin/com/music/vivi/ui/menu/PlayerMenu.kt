@@ -93,6 +93,8 @@ import com.music.vivi.ui.component.NewAction
 import com.music.vivi.ui.component.NewActionGrid
 import com.music.vivi.ui.component.VolumeSlider
 import com.music.vivi.constants.EnableSaavnStreamingKey
+import com.music.vivi.constants.PlaybackPitchKey
+import com.music.vivi.constants.PlaybackTempoKey
 import com.music.vivi.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -142,15 +144,10 @@ fun PlayerMenu(
     var showChoosePlaylistDialog by rememberSaveable {
         mutableStateOf(false)
     }
-    
-    var showListenTogetherDialog by rememberSaveable {
-        mutableStateOf(false)
-    }
 
     val listenTogetherManager = LocalListenTogetherManager.current
     val listenTogetherRoleState = listenTogetherManager?.role?.collectAsState(initial = com.music.vivi.listentogether.RoomRole.NONE)
     val isListenTogetherGuest = listenTogetherRoleState?.value == com.music.vivi.listentogether.RoomRole.GUEST
-    val pendingSuggestions by listenTogetherManager?.pendingSuggestions?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
 
     AddToPlaylistDialog(
         isVisible = showChoosePlaylistDialog,
@@ -166,12 +163,6 @@ fun PlayerMenu(
         onDismiss = {
             showChoosePlaylistDialog = false
         }
-    )
-
-    ListenTogetherDialog(
-        visible = showListenTogetherDialog,
-        mediaMetadata = mediaMetadata,
-        onDismiss = { showListenTogetherDialog = false }
     )
 
     var showSelectArtistDialog by rememberSaveable {
@@ -558,66 +549,6 @@ fun PlayerMenu(
                 items = buildList {
                     add(
                         Material3MenuItemData(
-                            title = { Text(text = stringResource(R.string.listen_together)) },
-                            icon = {
-                                // Show a small badge when there are pending suggestions
-                                Box {
-                                    Icon(
-                                        painter = painterResource(R.drawable.group),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    if (pendingSuggestions.isNotEmpty()) {
-                                        Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier
-                                                .offset(x = 8.dp, y = (-6).dp)
-                                                .align(Alignment.TopEnd)
-                                        ) {
-                                            Text(
-                                                text = pendingSuggestions.size.toString(),
-                                                color = MaterialTheme.colorScheme.onPrimary,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                style = MaterialTheme.typography.labelSmall
-                                            )
-                                        }
-                                    }
-                                }
-                            },
-                            onClick = { showListenTogetherDialog = true }
-                        )
-                    )
-                    if (isListenTogetherGuest) {
-                        add(
-                            Material3MenuItemData(
-                                title = { Text(text = stringResource(R.string.resync)) },
-                                icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.replay),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                },
-                                onClick = {
-                                    listenTogetherManager.requestSync()
-                                    onDismiss()
-                                }
-                            )
-                        )
-                    }
-                }
-            )
-        }
-
-        item { Spacer(modifier = Modifier.height(12.dp)) }
-
-        item {
-            Material3MenuGroup(
-                expressive = true,
-                items = buildList {
-                    add(
-                        Material3MenuItemData(
                             title = { Text(text = stringResource(R.string.details)) },
                             description = { Text(text = stringResource(R.string.details_desc)) },
                             icon = {
@@ -678,15 +609,11 @@ fun PlayerMenu(
 @Composable
 fun TempoPitchDialog(onDismiss: () -> Unit) {
     val playerConnection = LocalPlayerConnection.current ?: return
-    var tempo by remember {
-        mutableFloatStateOf(playerConnection.player.playbackParameters.speed)
-    }
-    var transposeValue by remember {
-        mutableIntStateOf(round(12 * log2(playerConnection.player.playbackParameters.pitch)).toInt())
-    }
-    val updatePlaybackParameters = {
+    var tempo by rememberPreference(PlaybackTempoKey, defaultValue = 1.0f)
+    var transposeValue by rememberPreference(PlaybackPitchKey, defaultValue = 0)
+    val updatePlaybackParameters = { newTempo: Float, newTranspose: Int ->
         playerConnection.player.playbackParameters =
-            PlaybackParameters(tempo, 2f.pow(transposeValue.toFloat() / 12))
+            PlaybackParameters(newTempo, 2f.pow(newTranspose.toFloat() / 12))
     }
     val listenTogetherManager = com.music.vivi.LocalListenTogetherManager.current
     val isInRoom = listenTogetherManager?.isInRoom ?: false
@@ -702,7 +629,7 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
                 onClick = {
                     tempo = 1f
                     transposeValue = 0
-                    updatePlaybackParameters()
+                    updatePlaybackParameters(1f, 0)
                 },
             ) {
                 Text(stringResource(R.string.reset))
@@ -724,7 +651,7 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
                         values = (0..35).map { round((0.25f + it * 0.05f) * 100) / 100 },
                         onValueUpdate = {
                             tempo = it
-                            updatePlaybackParameters()
+                            updatePlaybackParameters(it, transposeValue)
                         },
                         valueText = { "x$it" },
                         modifier = Modifier.padding(bottom = 12.dp),
@@ -736,7 +663,7 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
                     values = (-12..12).toList(),
                     onValueUpdate = {
                         transposeValue = it
-                        updatePlaybackParameters()
+                        updatePlaybackParameters(tempo, it)
                     },
                     valueText = { "${if (it > 0) "+" else ""}$it" },
                 )

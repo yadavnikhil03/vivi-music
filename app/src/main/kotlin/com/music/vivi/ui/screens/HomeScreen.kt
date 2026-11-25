@@ -7,8 +7,14 @@ package com.music.vivi.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.util.lerp
 import androidx.compose.animation.AnimatedVisibility
+import com.music.vivi.github.news.ui.HomeAnnouncementBottomSheet
+import com.music.vivi.github.news.ui.HomeAnnouncementCard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -75,7 +81,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -126,8 +131,6 @@ import com.music.vivi.db.entities.Album
 import com.music.vivi.db.entities.Artist
 import com.music.vivi.db.entities.LocalItem
 import com.music.vivi.db.entities.Playlist
-import com.music.vivi.db.entities.PlaylistEntity
-import com.music.vivi.db.entities.PlaylistSongMap
 import com.music.vivi.db.entities.Song
 import com.music.vivi.extensions.toMediaItem
 import com.music.vivi.LocalDatabase
@@ -167,7 +170,6 @@ import com.music.vivi.ui.utils.resize
 import com.music.vivi.utils.listItemShape
 import com.music.vivi.utils.rememberEnumPreference
 import com.music.vivi.utils.rememberPreference
-import com.music.vivi.viewmodels.CommunityPlaylistItem
 import com.music.vivi.viewmodels.HomeViewModel
 import kotlin.math.min
 import kotlin.random.Random
@@ -190,183 +192,6 @@ sealed class HomeSection(val id: String, val baseWeight: Int) {
     data class SimilarRecommendation(val index: Int) : HomeSection("similar_recommendation_$index", 10)
     data class HomePageSection(val index: Int) : HomeSection("home_page_section_$index", 10)
     data object MoodAndGenres : HomeSection("mood_and_genres", 5)
-}
-
-@Composable
-fun CommunityPlaylistCard(
-    item: CommunityPlaylistItem,
-    onClick: () -> Unit,
-    onSongClick: (SongItem) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val database = LocalDatabase.current
-    val playerConnection = LocalPlayerConnection.current
-    val scope = rememberCoroutineScope()
-    
-    val dbPlaylist by database.playlistByBrowseId(item.playlist.id).collectAsState(initial = null)
-    val isBookmarked = dbPlaylist?.playlist?.bookmarkedAt != null
-
-    Card(
-        modifier = modifier.width(300.dp),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-        ),
-        onClick = onClick
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            // Big Clear Typography
-            Text(
-                text = item.playlist.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "By ${item.playlist.author?.name ?: "Unknown"}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Minimalist Song List
-            item.songs.take(3).forEach { song ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onSongClick(song) },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AsyncImage(
-                        model = song.thumbnail.resize(100, 100),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = song.title, 
-                            style = MaterialTheme.typography.bodyMedium, 
-                            maxLines = 1, 
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = song.artists.joinToString(", ") { it.name }, 
-                            style = MaterialTheme.typography.labelSmall, 
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, 
-                            maxLines = 1, 
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Wide Action Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = {
-                        item.playlist.playEndpoint?.let {
-                            playerConnection?.playQueue(YouTubeQueue(it))
-                        }
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Icon(painterResource(R.drawable.ic_widget_play), null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Play", fontWeight = FontWeight.Bold)
-                }
-
-                IconButton(
-                    onClick = { 
-                        item.playlist.radioEndpoint?.let {
-                            playerConnection?.playQueue(YouTubeQueue(it))
-                        }
-                    },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                ) {
-                    Icon(painterResource(R.drawable.radio), null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                }
-
-                IconButton(
-                    onClick = {
-                        scope.launch(Dispatchers.IO) {
-                            if (dbPlaylist?.playlist == null) {
-                                database.transaction {
-                                    val playlistEntity = PlaylistEntity(
-                                        name = item.playlist.title,
-                                        browseId = item.playlist.id,
-                                        thumbnailUrl = item.playlist.thumbnail,
-                                        remoteSongCount = item.playlist.songCountText?.split(" ")?.firstOrNull()?.toIntOrNull(),
-                                        playEndpointParams = item.playlist.playEndpoint?.params,
-                                        shuffleEndpointParams = item.playlist.shuffleEndpoint?.params,
-                                        radioEndpointParams = item.playlist.radioEndpoint?.params
-                                    ).toggleLike()
-                                    insert(playlistEntity)
-                                    scope.launch(Dispatchers.IO) {
-                                        item.songs.ifEmpty {
-                                            YouTube.playlist(item.playlist.id).completed()
-                                                .getOrNull()?.songs.orEmpty()
-                                        }.map { it.toMediaMetadata() }
-                                            .onEach(::insert)
-                                            .mapIndexed { index, song ->
-                                                PlaylistSongMap(
-                                                    songId = song.id,
-                                                    playlistId = playlistEntity.id,
-                                                    position = index,
-                                                    setVideoId = song.setVideoId
-                                                )
-                                            }
-                                            .forEach(::insert)
-                                    }
-                                }
-                            } else {
-                                database.transaction {
-                                    val currentPlaylist = dbPlaylist!!.playlist
-                                    update(currentPlaylist.toggleLike())
-                                }
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                ) {
-                    Icon(
-                        painter = painterResource(if (isBookmarked) R.drawable.library_add_check else R.drawable.library_add), 
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-            }
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -507,7 +332,25 @@ fun HomeScreen(
     val menuState = LocalMenuState.current
     val bottomSheetPageState = LocalBottomSheetPageState.current
     val database = LocalDatabase.current
-    val playerConnection = LocalPlayerConnection.current ?: return
+    val playerConnection = LocalPlayerConnection.current
+    if (playerConnection == null) {
+        ShimmerHost(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                TextPlaceholder(
+                    height = 36.dp,
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .width(250.dp),
+                )
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    repeat(2) {
+                        GridItemPlaceHolder()
+                    }
+                }
+            }
+        }
+        return
+    }
     val haptic = LocalHapticFeedback.current
 
     val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
@@ -545,6 +388,8 @@ fun HomeScreen(
     val (randomizeHomeOrder) = rememberPreference(RandomizeHomeOrderKey, true)
 
     val shouldShowWrappedCard by viewModel.showWrappedCard.collectAsState()
+    val announcement by viewModel.announcement.collectAsState()
+    var showAnnouncementBottomSheet by rememberSaveable { mutableStateOf(false) }
     val wrappedState by viewModel.wrappedManager.state.collectAsState()
     val isWrappedDataReady = wrappedState.isDataReady
 
@@ -591,16 +436,6 @@ fun HomeScreen(
             lazylistState.animateScrollToItem(0)
             backStackEntry?.savedStateHandle?.set("scrollToTop", false)
         }
-    }
-
-    LaunchedEffect(Unit) {
-        snapshotFlow { lazylistState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
-            .collect { lastVisibleIndex ->
-                val len = lazylistState.layoutInfo.totalItemsCount
-                if (lastVisibleIndex != null && lastVisibleIndex >= len - 3) {
-                    viewModel.loadMoreYouTubeItems(homePage?.continuation)
-                }
-            }
     }
 
     NetworkReload(
@@ -755,6 +590,7 @@ fun HomeScreen(
         )
     }
 
+    val quickPicksLocalized = stringResource(R.string.quick_picks)
     val homeSections = remember(
         randomizeHomeOrder,
         randomSeed,
@@ -768,7 +604,8 @@ fun HomeScreen(
         communityPlaylists,
         similarRecommendations,
         homePage?.sections,
-        explorePage?.moodAndGenres
+        explorePage?.moodAndGenres,
+        quickPicksLocalized
     ) {
         val list = mutableListOf<HomeSection>()
         val chipActive = selectedChip != null
@@ -842,21 +679,29 @@ fun HomeScreen(
             }
         }
 
-        // If logged in, YouTube provides its own superior "Quick picks" section. 
-        // If logged out as guest, we use our local app-generated Quick Picks.
-        val hasYouTubeQuickPicks = sortedList.any { 
-            it is HomeSection.HomePageSection && homePage?.sections?.getOrNull(it.index)?.title?.equals("Quick picks", ignoreCase = true) == true 
+        val isYouTubeQuickPicksSection: (com.music.innertube.pages.HomePage.Section?) -> Boolean = { s ->
+            s != null && (
+                s.title.equals("Quick picks", ignoreCase = true) ||
+                s.title.equals(quickPicksLocalized, ignoreCase = true) ||
+                s.label?.contains("START RADIO", ignoreCase = true) == true
+            )
         }
 
-        val deduplicatedList = if (hasYouTubeQuickPicks) {
-            sortedList.filterNot { it == HomeSection.QuickPicks } // Hide local if remote exists
+        val hasYouTubeQuickPicks = sortedList.any { 
+            it is HomeSection.HomePageSection && isYouTubeQuickPicksSection(homePage?.sections?.getOrNull(it.index))
+        }
+
+        val deduplicatedList = if (hasYouTubeQuickPicks && quickPicks.isNullOrEmpty()) {
+            sortedList.filterNot { it == HomeSection.QuickPicks }
+        } else if (hasYouTubeQuickPicks) {
+            sortedList.filterNot { it is HomeSection.HomePageSection && isYouTubeQuickPicksSection(homePage?.sections?.getOrNull(it.index)) }
         } else {
             sortedList
         }
 
         // Always pin the surviving QuickPicks to the very top regardless of sort order
         val isQuickPicksSection: (HomeSection) -> Boolean = {
-            it == HomeSection.QuickPicks || (it is HomeSection.HomePageSection && homePage?.sections?.getOrNull(it.index)?.title?.equals("Quick picks", ignoreCase = true) == true)
+            it == HomeSection.QuickPicks || (it is HomeSection.HomePageSection && isYouTubeQuickPicksSection(homePage?.sections?.getOrNull(it.index)))
         }
         val qpItems = deduplicatedList.filter(isQuickPicksSection)
         if (qpItems.isNotEmpty()) qpItems + deduplicatedList.filterNot(isQuickPicksSection)
@@ -977,6 +822,25 @@ fun HomeScreen(
                 }
 
                 if (selectedChip == null) {
+                    item(key = "announcement_card") {
+                        AnimatedVisibility(
+                            visible = announcement != null,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically(),
+                        ) {
+                            announcement?.let { currentAnnouncement ->
+                                HomeAnnouncementCard(
+                                    announcement = currentAnnouncement,
+                                    onClick = { showAnnouncementBottomSheet = true },
+                                    onDismiss = { viewModel.dismissAnnouncement(currentAnnouncement.id) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                            }
+                        }
+                    }
+
                     item(key = "wrapped_card") {
                         AnimatedVisibility(visible = shouldShowWrappedCard) {
                             Card(
@@ -1420,25 +1284,16 @@ fun HomeScreen(
 
                                 item(key = "community_playlists_content") {
                                     LazyRow(
-                                        contentPadding = PaddingValues(horizontal = 16.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                        contentPadding = WindowInsets.systemBars
+                                            .only(WindowInsetsSides.Horizontal)
+                                            .asPaddingValues(),
                                         modifier = Modifier.animateItem()
                                     ) {
-                                        items(playlists) { item ->
-                                            CommunityPlaylistCard(
-                                                item = item,
-                                                onClick = {
-                                                    navController.navigate("online_playlist/${item.playlist.id.removePrefix("VL")}")
-                                                },
-                                                onSongClick = { song ->
-                                                    playerConnection.playQueue(
-                                                        YouTubeQueue(
-                                                            song.endpoint ?: WatchEndpoint(videoId = song.id),
-                                                            song.toMediaMetadata()
-                                                        )
-                                                    )
-                                                }
-                                            )
+                                        items(
+                                            items = playlists.distinctBy { it.id },
+                                            key = { it.id },
+                                        ) { item ->
+                                            ytGridItem(item)
                                         }
                                     }
                                 }
@@ -1971,52 +1826,6 @@ fun HomeScreen(
                     }
                 }
 
-                if (isLoading || homePage?.continuation != null && homePage?.sections?.isNotEmpty() == true) {
-                    item(key = "loading_shimmer") {
-                        ShimmerHost(
-                            modifier = Modifier.animateItem()
-                        ) {
-                            repeat(2) {
-                                TextPlaceholder(
-                                    height = 36.dp,
-                                    modifier = Modifier
-                                        .padding(12.dp)
-                                        .width(250.dp),
-                                )
-                                LazyRow(
-                                    contentPadding = WindowInsets.systemBars
-                                        .only(WindowInsetsSides.Horizontal)
-                                        .asPaddingValues(),
-                                ) {
-                                    items(4) {
-                                        GridItemPlaceHolder()
-                                    }
-                                }
-                            }
-
-                            TextPlaceholder(
-                                height = 36.dp,
-                                modifier = Modifier
-                                    .padding(vertical = 12.dp, horizontal = 12.dp)
-                                    .width(250.dp),
-                            )
-                            repeat(4) {
-                                Row {
-                                    repeat(2) {
-                                        TextPlaceholder(
-                                            height = MoodAndGenresButtonHeight,
-                                            shape = RoundedCornerShape(6.dp),
-                                            modifier = Modifier
-                                                .padding(horizontal = 12.dp)
-                                                .width(200.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
                 item(key = "bottom_spacer") {
                     Spacer(modifier = Modifier.height(30.dp))
                 }
@@ -2064,6 +1873,14 @@ fun HomeScreen(
                 onRecognitionClick = {
                     navController.navigate("recognition")
                 }
+            )
+        }
+
+        if (showAnnouncementBottomSheet && announcement != null) {
+            HomeAnnouncementBottomSheet(
+                announcement = announcement,
+                repository = viewModel.announcementRepository,
+                onDismissRequest = { showAnnouncementBottomSheet = false },
             )
         }
     }

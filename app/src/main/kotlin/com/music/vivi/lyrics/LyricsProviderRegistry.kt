@@ -17,7 +17,6 @@ object LyricsProviderRegistry {
         "YouLyPlus"       to YouLyPlusLyricsProvider,
         "Paxsenix"        to PaxSenixLyricsProvider,
         "BetterLyrics"    to BetterLyricsProvider,
-        "Musixmatch"      to MusixmatchLyricsProvider,
         "LrcLib"          to LrcLibLyricsProvider,
         "Kugou"           to KuGouLyricsProvider,
         "Unison"          to UnisonLyricsProvider,
@@ -26,6 +25,8 @@ object LyricsProviderRegistry {
         "LrcRed"          to LrcRedLyricsProvider,
         "YouTubeSubtitle" to YouTubeSubtitleLyricsProvider,
         "YouTubeMusic"    to YouTubeLyricsProvider,
+        "BetterLyricsPortato" to BetterLyricsPortatoLyricsProvider,
+        "Genius"          to GeniusLyricsProvider,
     )
 
     val providerNames = providerMap.keys.toList()
@@ -41,7 +42,6 @@ object LyricsProviderRegistry {
         providers.filter { it in providerNames }.joinToString(",")
 
     fun getDefaultProviderOrder(): List<String> = listOf(
-        "Musixmatch",
         "YouLyPlus",
         "Paxsenix",
         "BetterLyrics",
@@ -51,8 +51,10 @@ object LyricsProviderRegistry {
         "BiniLyrics",
         "Spotify",
         "LrcRed",
+        "BetterLyricsPortato",
         "YouTubeSubtitle",
         "YouTubeMusic",
+        "Genius",
     )
 
     fun getOrderedProviders(orderString: String): List<LyricsProvider> =
@@ -63,7 +65,6 @@ object LyricsProviderRegistry {
         PreferredLyricsProvider.LRCLIB           -> "LrcLib"
         PreferredLyricsProvider.KUGOU            -> "Kugou"
         PreferredLyricsProvider.BETTER_LYRICS    -> "BetterLyrics"
-        PreferredLyricsProvider.MUSIXMATCH       -> "Musixmatch"
         PreferredLyricsProvider.YOULYPLUS        -> "YouLyPlus"
         PreferredLyricsProvider.PAXSENIX         -> "Paxsenix"
         PreferredLyricsProvider.UNISON           -> "Unison"
@@ -79,7 +80,6 @@ object LyricsProviderRegistry {
         "YouLyPlus"       -> "YouLyPlus"
         "Paxsenix"        -> "PaxSenix"
         "BetterLyrics"    -> "Better Lyrics"
-        "Musixmatch"      -> "Musixmatch"
         "LrcLib"          -> "LrcLib"
         "Kugou"           -> "KuGou"
         "Unison"          -> "Unison"
@@ -88,6 +88,8 @@ object LyricsProviderRegistry {
         "LrcRed"          -> "lrc.red"
         "YouTubeSubtitle" -> "YouTube Subtitle"
         "YouTubeMusic"    -> "YouTube Music"
+        "BetterLyricsPortato" -> "Better Lyrics (Portato)"
+        "Genius"          -> "Genius"
         else              -> name
     }
 }

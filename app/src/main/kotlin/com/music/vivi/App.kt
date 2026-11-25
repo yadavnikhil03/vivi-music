@@ -12,6 +12,7 @@ import android.content.Context
 import android.os.Build
 import android.widget.Toast
 import androidx.datastore.preferences.core.edit
+import androidx.work.Configuration
 import org.json.JSONObject
 import com.music.spotify.Spotify
 import com.music.spotify.SpotifyAuth
@@ -30,7 +31,6 @@ import com.music.innertube.models.YouTubeLocale
 import com.music.kugou.KuGou
 import com.music.lastfm.LastFM
 import com.music.vivi.constants.*
-import com.music.vivi.vivimusic.release.NewReleaseCheckWorker
 import com.music.vivi.di.ApplicationScope
 import com.music.vivi.extensions.toEnum
 import com.music.vivi.extensions.toInetSocketAddress
@@ -60,7 +60,13 @@ import java.util.Locale
 import javax.inject.Inject
 
 @HiltAndroidApp
-class App : Application(), SingletonImageLoader.Factory {
+class App : Application(), SingletonImageLoader.Factory,
+Configuration.Provider {
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setMinimumLoggingLevel(if (BuildConfig.DEBUG) android.util.Log.DEBUG else android.util.Log.ERROR)
+            .build()
 
 
     @Inject
@@ -70,6 +76,11 @@ class App : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         context = this
+
+        if (isCrashProcess()) {
+            Timber.plant(Timber.DebugTree())
+            return
+        }
 
         // Install crash handler first
         CrashHandler.install(this)
@@ -87,6 +98,26 @@ class App : Application(), SingletonImageLoader.Factory {
             initializeSettings()
             observeSettingsChanges()
         }
+
+        // Prewarm InnerTubeX extraction engine and public player in the background for instant playback
+        applicationScope.launch(Dispatchers.IO) {
+            runCatching { InnerTubeXPlayer.prewarm() }
+        }
+    }
+
+    private fun isCrashProcess(): Boolean {
+        val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            getProcessName()
+        } else {
+            try {
+                val pid = android.os.Process.myPid()
+                val am = getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                am?.runningAppProcesses?.firstOrNull { it.pid == pid }?.processName
+            } catch (_: Exception) {
+                null
+            }
+        }
+        return processName?.endsWith(":crash") == true
     }
 
     private suspend fun initializeSettings() {
@@ -183,7 +214,7 @@ class App : Application(), SingletonImageLoader.Factory {
                             val expiresAt = json.optLong("expiresAt", 0L)
                             val spDc = json.optString("spDc", "")
                             val spKey = json.optString("spKey", "")
-                            
+
                             if (token.isNotEmpty() && expiresAt > System.currentTimeMillis() + 60_000L) {
                                 Spotify.accessToken = token
                             } else if (spDc.isNotEmpty()) {
@@ -214,6 +245,31 @@ class App : Application(), SingletonImageLoader.Factory {
                 .distinctUntilChanged()
                 .collect { dataSyncId ->
                     YouTube.dataSyncId = normalizeDataSyncId(dataSyncId)
+                }
+        }
+
+        YouTube.onCookieChanged = { updatedCookie ->
+            applicationScope.launch(Dispatchers.IO) {
+                dataStore.edit { preferences ->
+                    preferences[InnerTubeCookieKey] = updatedCookie
+                }
+            }
+        }
+
+        YouTube.onVisitorCookieChanged = { updatedVisitorCookie ->
+            applicationScope.launch(Dispatchers.IO) {
+                dataStore.edit { preferences ->
+                    preferences[VisitorCookieKey] = updatedVisitorCookie
+                }
+            }
+        }
+
+        applicationScope.launch(Dispatchers.IO) {
+            dataStore.data
+                .map { it[VisitorCookieKey] }
+                .distinctUntilChanged()
+                .collect { visitorCookie ->
+                    YouTube.visitorCookie = visitorCookie
                 }
         }
 
@@ -255,16 +311,25 @@ class App : Application(), SingletonImageLoader.Factory {
                         ?.let { Locale.forLanguageTag(it) }
                         ?: systemLocale
 
-                    YouTube.locale = YouTubeLocale(
-                        gl = contentCountry?.takeIf { it != SYSTEM_DEFAULT && it != "system" }
-                            ?: effectiveAppLocale.country.takeIf { it in CountryCodeToName }
-                            ?: systemLocale.country.takeIf { it in CountryCodeToName }
-                            ?: "US",
-                        hl = contentLanguage?.takeIf { it != SYSTEM_DEFAULT && it != "system" }
-                            ?: effectiveAppLocale.toLanguageTag().takeIf { it in LanguageCodeToName }
-                            ?: effectiveAppLocale.language.takeIf { it in LanguageCodeToName }
-                            ?: "en"
-                    )
+                    val previousGl = YouTube.locale.gl
+                    val newGl = contentCountry?.takeIf { it != SYSTEM_DEFAULT && it != "system" }
+                        ?: effectiveAppLocale.country.takeIf { it in CountryCodeToName }
+                        ?: systemLocale.country.takeIf { it in CountryCodeToName }
+                        ?: "US"
+                    val newHl = contentLanguage?.takeIf { it != SYSTEM_DEFAULT && it != "system" }
+                        ?: effectiveAppLocale.toLanguageTag().takeIf { it in LanguageCodeToName }
+                        ?: effectiveAppLocale.language.takeIf { it in LanguageCodeToName }
+                        ?: "en"
+
+                    YouTube.locale = YouTubeLocale(gl = newGl, hl = newHl)
+
+                    if (previousGl != newGl) {
+                        YouTube.refreshVisitorData().onSuccess { newVisitorData ->
+                            dataStore.edit { prefs ->
+                                prefs[VisitorDataKey] = newVisitorData
+                            }
+                        }
+                    }
                 }
         }
 
@@ -277,31 +342,7 @@ class App : Application(), SingletonImageLoader.Factory {
                 }
         }
 
-        // One-time migration: clear stale "seen releases" baseline from the buggy first run
-        // so the worker re-snapshots all artists correctly on next launch.
-        val migrationPrefs = getSharedPreferences("app_migrations", Context.MODE_PRIVATE)
-        val NEW_RELEASE_MIGRATION_V1 = "new_release_seen_reset_v1"
-        if (!migrationPrefs.getBoolean(NEW_RELEASE_MIGRATION_V1, false)) {
-            NewReleaseCheckWorker.clearSeenReleases(this)
-            migrationPrefs.edit().putBoolean(NEW_RELEASE_MIGRATION_V1, true).apply()
-        }
-
-        applicationScope.launch(Dispatchers.IO) {
-            dataStore.data
-                .map {
-                    val bookmarkedEnabled = it[NewReleaseNotificationsKey] ?: true
-                    val tasteBasedEnabled = it[TasteBasedReleaseNotificationsKey] ?: false
-                    bookmarkedEnabled || tasteBasedEnabled
-                }
-                .distinctUntilChanged()
-                .collect { enabled ->
-                    if (enabled) {
-                        NewReleaseCheckWorker.schedule(this@App)
-                    } else {
-                        NewReleaseCheckWorker.cancel(this@App)
-                    }
-                }
-        }
+        androidx.work.WorkManager.getInstance(this).cancelUniqueWork("NewReleaseCheckWork")
 
         applicationScope.launch(Dispatchers.IO) {
             dataStore.data
@@ -343,6 +384,9 @@ class App : Application(), SingletonImageLoader.Factory {
         lateinit var context: Context
             private set
 
+        val applicationScope: CoroutineScope
+            get() = (context as App).applicationScope
+
         suspend fun forgetAccount(context: Context) {
             Timber.d("forgetAccount: Starting logout process")
 
@@ -350,6 +394,7 @@ class App : Application(), SingletonImageLoader.Factory {
             Timber.d("forgetAccount: Clearing DataStore preferences")
             context.dataStore.edit { settings ->
                 settings.remove(InnerTubeCookieKey)
+                settings.remove(VisitorCookieKey)
                 settings.remove(VisitorDataKey)
                 settings.remove(DataSyncIdKey)
                 settings.remove(AccountNameKey)
@@ -362,6 +407,7 @@ class App : Application(), SingletonImageLoader.Factory {
             Timber.d("forgetAccount: Clearing YouTube object auth state")
             Timber.d("forgetAccount: Before - cookie=${YouTube.cookie?.take(50)}, visitorData=${YouTube.visitorData?.take(20)}, dataSyncId=${YouTube.dataSyncId?.take(20)}")
             YouTube.cookie = null
+            YouTube.visitorCookie = null
             YouTube.visitorData = null
             YouTube.dataSyncId = null
             Timber.d("forgetAccount: After - cookie=${YouTube.cookie}, visitorData=${YouTube.visitorData}, dataSyncId=${YouTube.dataSyncId}")

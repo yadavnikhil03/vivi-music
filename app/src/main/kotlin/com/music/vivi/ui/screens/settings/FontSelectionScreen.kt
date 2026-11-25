@@ -53,6 +53,7 @@ import com.music.vivi.ui.component.Material3SettingsItem
 
 import com.music.vivi.ui.theme.OutfitFontFamily
 import com.music.vivi.ui.theme.PlusJakartaSansFontFamily
+import com.music.vivi.ui.theme.PoppinsFontFamily
 import com.music.vivi.ui.utils.backToMain
 import com.music.vivi.utils.rememberPreference
 
@@ -64,7 +65,7 @@ fun FontSelectionScreen(
 ) {
     val (selectedFont, onSelectedFontChange) = rememberPreference(
         SelectedFontKey,
-        defaultValue = AppFont.SYSTEM.value
+        defaultValue = AppFont.POPPINS.value
     )
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -116,8 +117,8 @@ fun FontSelectionScreen(
 
     val activeFontFamily = remember(selectedFont, customFontPath) {
         when (AppFont.fromValue(selectedFont)) {
+            AppFont.POPPINS -> PoppinsFontFamily
             AppFont.SYSTEM -> FontFamily.Default
-
             AppFont.OUTFIT -> OutfitFontFamily
             AppFont.PLUS_JAKARTA_SANS -> PlusJakartaSansFontFamily
             AppFont.CUSTOM -> {
@@ -188,6 +189,31 @@ fun FontSelectionScreen(
         ExpressiveSettingGroup(
             title = stringResource(R.string.font_selection),
             items = buildList {
+                add(
+                    Material3SettingsItem(
+                        leadingContent = {
+                            AnimatedRadioButton(
+                                selected = selectedFont == AppFont.POPPINS.value,
+                                onClick = null
+                            )
+                        },
+                        title = {
+                            Text(
+                                text = stringResource(R.string.font_poppins),
+                                fontFamily = PoppinsFontFamily,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        },
+                        description = {
+                            Text(
+                                text = stringResource(R.string.font_poppins_desc),
+                                fontFamily = PoppinsFontFamily
+                            )
+                        },
+                        onClick = { onSelectedFontChange(AppFont.POPPINS.value) }
+                    )
+                )
+
                 add(
                     Material3SettingsItem(
                         leadingContent = {
@@ -288,7 +314,7 @@ fun FontSelectionScreen(
                                         File(customFontPath).delete()
                                         onCustomFontPathChange("")
                                         if (selectedFont == AppFont.CUSTOM.value) {
-                                            onSelectedFontChange(AppFont.SYSTEM.value)
+                                            onSelectedFontChange(AppFont.POPPINS.value)
                                         }
                                     },
                                     onLongClick = {}
